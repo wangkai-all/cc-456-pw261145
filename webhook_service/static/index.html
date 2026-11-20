@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Webhook 接收服务 · 监控台</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-3: #898781;
+    --hairline: #e1e0d9;
+    --border: rgba(11,11,11,0.10);
+    --good: #0ca30c;
+    --good-ink: #006300;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --accent: #2a78d6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    background: var(--surface-1); border-bottom: 1px solid var(--hairline);
+    padding: 16px 24px; display: flex; flex-wrap: wrap; gap: 16px;
+    align-items: center; justify-content: space-between;
+  }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  h1 .sub { color: var(--ink-3); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  main { padding: 20px 24px; max-width: 1440px; margin: 0 auto; }
+  button {
+    font: inherit; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--ink);
+  }
+  button:hover { background: #f0efec; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #256abf; }
+  button.danger { color: var(--critical); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  /* ---- stat tiles ---- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+           gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--hairline);
+          border-radius: 10px; padding: 12px 16px; }
+  .tile .label { color: var(--ink-2); font-size: 12px; display: flex;
+                 align-items: center; gap: 6px; }
+  .tile .value { font-size: 28px; font-weight: 650; margin-top: 2px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+
+  /* ---- panels ---- */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .panel { background: var(--surface-1); border: 1px solid var(--hairline);
+           border-radius: 10px; overflow: hidden; }
+  .panel.wide { grid-column: 1 / -1; }
+  .panel h2 { font-size: 13px; font-weight: 650; margin: 0; padding: 10px 14px;
+              border-bottom: 1px solid var(--hairline); color: var(--ink-2);
+              display: flex; justify-content: space-between; align-items: center; }
+  .panel h2 .count { color: var(--ink-3); font-weight: 400; }
+  .table-wrap { overflow-x: auto; max-height: 340px; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 14px; border-bottom: 1px solid var(--hairline);
+           vertical-align: top; }
+  th { color: var(--ink-3); font-weight: 500; font-size: 12px; position: sticky;
+       top: 0; background: var(--surface-1); }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .muted { color: var(--ink-3); }
+  .empty { padding: 18px 14px; color: var(--ink-3); font-size: 13px; }
+
+  /* ---- badges: 状态色 + 图标 + 文字，不只靠颜色 ---- */
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px;
+           border-radius: 999px; font-size: 12px; white-space: nowrap;
+           border: 1px solid var(--border); }
+  .badge .icon { font-size: 11px; line-height: 1; }
+  .badge.good     { color: var(--good-ink);  background: rgba(12,163,12,.10); }
+  .badge.warning  { color: #7a5800;          background: rgba(250,178,25,.18); }
+  .badge.serious  { color: #8a3c14;          background: rgba(236,131,90,.16); }
+  .badge.critical { color: var(--critical);  background: rgba(208,59,59,.10); }
+  .badge.neutral  { color: var(--ink-2);     background: rgba(11,11,11,.05); }
+  .badge.info     { color: #1c5cab;          background: rgba(42,120,214,.10); }
+
+  /* ---- controls ---- */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .scenarios { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;
+               align-items: center; }
+  .scenarios .label { color: var(--ink-2); font-size: 13px; margin-right: 4px; }
+  .keys { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+           background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 8px;
+           font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none;
+           max-width: 80vw; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Webhook 接收服务<span class="sub">去重 · 乱序暂存 · 双密钥验签 · 失败重试</span></h1>
+  <div class="controls">
+    <div class="keys" id="keys"></div>
+    <button id="btn-rotate">轮换密钥</button>
+    <button id="btn-expire">结束双密钥窗口</button>
+    <button id="btn-reset" class="danger">重置数据</button>
+  </div>
+</header>
+<main>
+  <div class="tiles" id="tiles"></div>
+
+  <div class="scenarios">
+    <span class="label">场景演示：</span>
+    <button data-sc="ordered">按序投递</button>
+    <button data-sc="duplicate">重放去重</button>
+    <button data-sc="out_of_order">乱序暂存→释放</button>
+    <button data-sc="delayed_stale">延迟拒绝</button>
+    <button data-sc="key_rotation">密钥轮换</button>
+    <button data-sc="expired_old_key">窗口关闭拒旧签</button>
+    <button data-sc="bad_signature">伪造签名</button>
+    <button data-sc="replay_old_timestamp">过期时间戳重放</button>
+    <button data-sc="partial_failure">部分处理失败</button>
+  </div>
+
+  <div class="grid">
+    <section class="panel wide">
+      <h2>接收记录 <span class="count" id="c-deliveries"></span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>时间</th><th>事件</th><th class="num">seq</th><th>结果</th><th>验签密钥</th><th>说明</th></tr></thead>
+        <tbody id="tb-deliveries"></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel">
+      <h2>暂存区（等待水位推进）<span class="count" id="c-staged"></span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="num">seq</th><th>事件</th><th>类型</th><th>等待</th><th>暂存于</th></tr></thead>
+        <tbody id="tb-staged"></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel">
+      <h2>释放记录（暂存 → 已应用）<span class="count" id="c-released"></span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="num">seq</th><th>事件</th><th>暂存于</th><th>释放于</th><th class="num">等待时长</th></tr></thead>
+        <tbody id="tb-released"></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel">
+      <h2>拒绝 / 去重记录 <span class="count" id="c-rejected"></span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>时间</th><th>事件</th><th>结果</th><th>说明</th></tr></thead>
+        <tbody id="tb-rejected"></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel">
+      <h2>处理失败（可重试）<span class="count" id="c-failed"></span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="num">seq</th><th>事件</th><th>失败原因</th><th class="num">尝试</th><th>操作</th></tr></thead>
+        <tbody id="tb-failed"></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel">
+      <h2>业务投影（账本）<span class="count" id="c-projection"></span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>账户</th><th class="num">余额</th><th class="num">最后应用 seq</th></tr></thead>
+        <tbody id="tb-projection"></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel">
+      <h2>应用日志（严格按 seq 顺序）<span class="count" id="c-projlog"></span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="num">seq</th><th>事件</th><th>账户</th><th class="num">变动</th><th class="num">余额</th></tr></thead>
+        <tbody id="tb-projlog"></tbody>
+      </table></div>
+    </section>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+const OUTCOMES = {
+  applied:                ["good",     "✓", "已应用"],
+  staged:                 ["warning",  "‖", "已暂存"],
+  duplicate:              ["neutral",  "↺", "重复去重"],
+  failed:                 ["critical", "✗", "处理失败"],
+  stale:                  ["serious",  "◷", "水位已过"],
+  stale_version:          ["serious",  "◷", "版本过期"],
+  rejected_bad_signature: ["critical", "✗", "签名无效"],
+  rejected_timestamp:     ["critical", "✗", "时间戳过期"],
+  rejected_unknown_key:   ["critical", "✗", "未知密钥"],
+  rejected_key_expired:   ["critical", "✗", "密钥窗口已关"],
+  rejected_seq_conflict:  ["critical", "✗", "序号冲突"],
+  rejected_invalid_payload:["critical","✗", "报文非法"],
+};
+const REJECTED_LIKE = new Set(["stale", "stale_version", "duplicate"]);
+
+function badge(outcome) {
+  const [cls, icon, text] = OUTCOMES[outcome] || ["neutral", "?", outcome];
+  return `<span class="badge ${cls}"><span class="icon">${icon}</span>${text}</span>`;
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
+  (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtTime = (ts) => ts ? new Date(ts * 1000).toLocaleTimeString("zh-CN",
+  {hour12: false}) + "." + String(Math.floor(ts * 1000) % 1000).padStart(3, "0") : "—";
+const evName = (eid, ver) => eid ? `${esc(eid)} <span class="muted">v${ver}</span>` : "—";
+
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.style.opacity = 1;
+  setTimeout(() => el.style.opacity = 0, 2600);
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+function renderKeys(keys) {
+  const el = $("keys");
+  el.innerHTML = keys.filter(k => k.role !== "retired").map(k => {
+    if (k.role === "current")
+      return `<span class="badge info"><span class="icon">●</span>当前密钥 ${esc(k.kid)}</span>`;
+    const left = k.in_window ? `窗口剩余 ${k.grace_remaining}s` : "窗口已过期";
+    return `<span class="badge warning"><span class="icon">●</span>旧密钥 ${esc(k.kid)} · ${left}</span>`;
+  }).join("");
+}
+
+function render(state) {
+  const c = state.counts;
+  const tiles = [
+    ["水位", state.watermark, "var(--accent)"],
+    ["已应用", c.applied || 0, "var(--good)"],
+    ["暂存中", c.staged || 0, "#c98a00"],
+    ["处理失败", c.failed || 0, "var(--critical)"],
+    ["重复去重", c.duplicate || 0, "var(--ink-3)"],
+    ["已拒绝", c.rejected || 0, "var(--serious)"],
+  ];
+  $("tiles").innerHTML = tiles.map(([label, v, color]) =>
+    `<div class="tile"><div class="label"><span class="dot" style="background:${color}"></span>${label}</div>
+     <div class="value">${v}</div></div>`).join("");
+
+  renderKeys(state.keys);
+
+  // 接收记录
+  const ds = state.deliveries;
+  $("c-deliveries").textContent = `${ds.length} 条`;
+  $("tb-deliveries").innerHTML = ds.map(d =>
+    `<tr><td class="mono">${fmtTime(d.received_at)}</td>
+     <td class="mono">${evName(d.event_id, d.version)}</td>
+     <td class="num">${d.seq ?? "—"}</td>
+     <td>${badge(d.outcome)}</td>
+     <td class="mono">${d.kid ? esc(d.kid) + (d.key_role === "previous" ?
+        ' <span class="badge warning"><span class="icon">●</span>旧密钥</span>' : "") : "—"}</td>
+     <td class="muted">${esc(d.detail)}</td></tr>`).join("")
+    || `<tr><td colspan="6" class="empty">暂无投递</td></tr>`;
+
+  // 暂存区
+  $("c-staged").textContent = `${state.staged.length} 条`;
+  $("tb-staged").innerHTML = state.staged.map(e =>
+    `<tr><td class="num">${e.seq}</td>
+     <td class="mono">${evName(e.event_id, e.version)}</td>
+     <td>${esc(e.type)}</td>
+     <td>等待 seq=${e.waiting_for}</td>
+     <td class="mono">${fmtTime(e.staged_at)}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="empty">暂存区为空</td></tr>`;
+
+  // 释放记录
+  $("c-released").textContent = `${state.released.length} 条`;
+  $("tb-released").innerHTML = state.released.map(e =>
+    `<tr><td class="num">${e.seq}</td>
+     <td class="mono">${evName(e.event_id, e.version)}</td>
+     <td class="mono">${fmtTime(e.staged_at)}</td>
+     <td class="mono">${fmtTime(e.applied_at)}</td>
+     <td class="num">${((e.applied_at - e.staged_at) * 1000).toFixed(0)} ms</td></tr>`).join("")
+    || `<tr><td colspan="5" class="empty">暂无释放记录</td></tr>`;
+
+  // 拒绝 / 去重
+  const rejected = ds.filter(d => d.outcome.startsWith("rejected") || REJECTED_LIKE.has(d.outcome));
+  $("c-rejected").textContent = `${rejected.length} 条`;
+  $("tb-rejected").innerHTML = rejected.map(d =>
+    `<tr><td class="mono">${fmtTime(d.received_at)}</td>
+     <td class="mono">${evName(d.event_id, d.version)}</td>
+     <td>${badge(d.outcome)}</td>
+     <td class="muted">${esc(d.detail)}</td></tr>`).join("")
+    || `<tr><td colspan="4" class="empty">暂无拒绝记录</td></tr>`;
+
+  // 失败 + 重试
+  $("c-failed").textContent = `${state.failed.length} 条`;
+  $("tb-failed").innerHTML = state.failed.map(e => {
+    const canPatch = e.payload && e.payload.force_fail;
+    return `<tr><td class="num">${e.seq}</td>
+     <td class="mono">${evName(e.event_id, e.version)}</td>
+     <td class="muted">${esc(e.fail_reason)}</td>
+     <td class="num">${e.attempts}</td>
+     <td>
+       <button onclick="retry('${esc(e.event_id)}', ${e.version}, false)">重试</button>
+       ${canPatch ? `<button onclick="retry('${esc(e.event_id)}', ${e.version}, true)">修复并重试</button>` : ""}
+     </td></tr>`;
+  }).join("") || `<tr><td colspan="5" class="empty">暂无失败事件</td></tr>`;
+
+  // 投影
+  $("c-projection").textContent = `${state.projection.length} 个账户`;
+  $("tb-projection").innerHTML = state.projection.map(p =>
+    `<tr><td class="mono">${esc(p.account)}</td>
+     <td class="num">${p.balance}</td><td class="num">${p.last_seq}</td></tr>`).join("")
+    || `<tr><td colspan="3" class="empty">暂无数据</td></tr>`;
+
+  $("c-projlog").textContent = `${state.projection_log.length} 条`;
+  $("tb-projlog").innerHTML = state.projection_log.map(r =>
+    `<tr><td class="num">${r.seq}</td><td class="mono">${esc(r.event_id)}</td>
+     <td class="mono">${esc(r.account)}</td>
+     <td class="num">${r.delta > 0 ? "+" : ""}${r.delta}</td>
+     <td class="num">${r.balance_after}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="empty">暂无应用日志</td></tr>`;
+}
+
+async function refresh() {
+  try { render(await api("/api/state")); }
+  catch (e) { /* 服务重启中，下个周期再试 */ }
+}
+
+async function retry(eventId, version, patch) {
+  const opts = patch
+    ? {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({patch: {force_fail: false}})}
+    : {method: "POST"};
+  const r = await api(`/admin/events/${eventId}/${version}/retry`, opts);
+  toast(r.ok ? `重试成功，水位推进到 ${r.watermark}`
+             : `重试后状态：${r.status}${r.fail_reason ? " · " + r.fail_reason : ""}`);
+  refresh();
+}
+
+document.querySelectorAll("[data-sc]").forEach(btn =>
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const r = await api(`/admin/demo/${btn.dataset.sc}`, {method: "POST"});
+    btn.disabled = false;
+    if (!r.ok) { toast(r.detail || "场景执行失败"); return; }
+    const summary = r.steps.map(s => s.outcome).join(" → ");
+    toast(`${btn.textContent}：${summary}`);
+    refresh();
+  }));
+
+$("btn-rotate").addEventListener("click", async () => {
+  const r = await api("/admin/keys/rotate", {method: "POST"});
+  toast(`已轮换：新密钥 ${r.kid}，旧密钥进入 ${r.grace_seconds}s 宽限窗口`);
+  refresh();
+});
+$("btn-expire").addEventListener("click", async () => {
+  const r = await api("/admin/keys/expire-previous", {method: "POST"});
+  toast(r.ok ? `双密钥窗口已结束，${r.retired_kid} 退役` : r.detail);
+  refresh();
+});
+$("btn-reset").addEventListener("click", async () => {
+  if (!confirm("清空全部事件、投递记录与投影，并恢复初始密钥？")) return;
+  await api("/admin/reset", {method: "POST"});
+  toast("已重置");
+  refresh();
+});
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
